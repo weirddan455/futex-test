@@ -21,9 +21,24 @@ If you run into issues, try installing the base-devel package group:
 
 ```
 # pacman -S base-devel
-~~~
+```
 
 TODO: Write instructions for other popular distros (Ubuntu, Debian, Fedora, etc.)
+
+## Get the code
+If you have git installed, clone the repo with:
+
+```
+git clone https://github.com/weirddan455/futex-test.git
+```
+
+You can then pull down any future updates with
+
+```
+git pull
+```
+
+If you don't wish to install git, you can just copy-paste futex-test.c from the web interface into a new file.
 
 ## Compiling
 To compile, simply run:
