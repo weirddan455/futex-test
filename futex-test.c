@@ -13,7 +13,6 @@
 
 #define NUM_FUTEX 10
 #define FUTEX_WAIT_MULTIPLE 31
-#define SYS_futex2_wake 442
 
 struct futex_wait_block {
 __u32 *uaddr;
@@ -205,27 +204,17 @@ bool testWaitMultiple(int nloops, bool verbose) {
     return success;
 }
 
-/* Since futex2 is implemented using a new syscall, we just call wake.
-   It doesn't actually wake anything but the kernel will throw an error if the syscall is not implemented. */
+/* futex2 has a sysfs interface, unlike the orignal futex, so we just check if that exists.
+   NOTE: The syscall numbers for futex2 are likely to change between major kernel releases.
+   If we wish to make an actual futex2 syscall in the future,
+   we must read the files in sysfs to get the correct syscall number for the running kernel. */
 bool testFutex2() {
-    __u32 *iaddr = mmap(NULL, sizeof(__u32), PROT_READ | PROT_WRITE,
-                MAP_ANONYMOUS | MAP_SHARED, -1, 0);
-    if (iaddr == MAP_FAILED) {
-        perror("mmap");
+    if (access("/sys/kernel/futex2", F_OK) == 0) {
+        return true;
+    } else {
+        perror("access /sys/kernel/futex2");
         return false;
     }
-    *iaddr = 0;
-    bool success;
-    if (syscall(SYS_futex2_wake, iaddr, 1, 2) == -1) {
-        perror("futex2");
-        success = false;
-    } else {
-        success = true;
-    }
-    if (munmap(iaddr, sizeof(__u32)) == -1) {
-        perror("munmap");
-    }
-    return success;
 }
 
 int main(int argc, char *argv[]) {
