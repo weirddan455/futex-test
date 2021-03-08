@@ -123,7 +123,7 @@ bool testWaitMultiple(int nloops, bool verbose) {
         subsequently use the "shared" futex operations (i.e., not the
         ones suffixed "_PRIVATE") */
 
-    int *iaddr = mmap(NULL, sizeof(int) * 2 * NUM_FUTEX, PROT_READ | PROT_WRITE,
+    __u32 *iaddr = mmap(NULL, sizeof(__u32) * 2 * NUM_FUTEX, PROT_READ | PROT_WRITE,
                 MAP_ANONYMOUS | MAP_SHARED, -1, 0);
     if (iaddr == MAP_FAILED) {
         perror("mmap");
@@ -152,7 +152,7 @@ bool testWaitMultiple(int nloops, bool verbose) {
     pid_t childPid = fork();
     if (childPid == -1) {
         perror("fork");
-        if (munmap(iaddr, sizeof(int) * 2 * NUM_FUTEX) == -1) {
+        if (munmap(iaddr, sizeof(__u32) * 2 * NUM_FUTEX) == -1) {
             perror("munmap");
         }
         return false;
@@ -199,7 +199,7 @@ bool testWaitMultiple(int nloops, bool verbose) {
     if (childStatus == EXIT_FAILURE) {
         success = false;
     }
-    if (munmap(iaddr, sizeof(int) * 2 * NUM_FUTEX) == -1) {
+    if (munmap(iaddr, sizeof(__u32) * 2 * NUM_FUTEX) == -1) {
         perror("munmap");
     }
     return success;
@@ -207,13 +207,25 @@ bool testWaitMultiple(int nloops, bool verbose) {
 
 /* Since futex2 is implemented using a new syscall, we just call wake.
    It doesn't actually wake anything but the kernel will throw an error if the syscall is not implemented. */
-void testFutex2() {
-    int iaddr = 0;
-    if (syscall(SYS_futex2_wake, &iaddr, 1, 2) == -1) {
-        perror("futex2 test failed");
-    } else {
-        puts("futex2 test successful");
+bool testFutex2() {
+    __u32 *iaddr = mmap(NULL, sizeof(__u32), PROT_READ | PROT_WRITE,
+                MAP_ANONYMOUS | MAP_SHARED, -1, 0);
+    if (iaddr == MAP_FAILED) {
+        perror("mmap");
+        return false;
     }
+    *iaddr = 0;
+    bool success;
+    if (syscall(SYS_futex2_wake, iaddr, 1, 2) == -1) {
+        perror("futex2");
+        success = false;
+    } else {
+        success = true;
+    }
+    if (munmap(iaddr, sizeof(__u32)) == -1) {
+        perror("munmap");
+    }
+    return success;
 }
 
 int main(int argc, char *argv[]) {
@@ -241,7 +253,11 @@ int main(int argc, char *argv[]) {
         } else {
             puts("FUTEX_WAIT_MULTIPLE test failed");
         }
-        testFutex2();
+        if (testFutex2()) {
+            puts("futex2 test successful");
+        } else {
+            puts("futex2 test failed");
+        }
     }
 
     exit(EXIT_SUCCESS);
