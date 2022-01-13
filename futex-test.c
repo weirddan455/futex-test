@@ -2,6 +2,7 @@
 #include <linux/futex.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -18,6 +19,13 @@ struct futex_wait_block {
 __u32 *uaddr;
 __u32 val;
 __u32 bitset;
+};
+
+struct futex_waitv {
+__u64 val;
+__u64 uaddr;
+__u32 flags;
+__u32 __reserved;
 };
 
 bool checkKernelType() {
@@ -217,6 +225,156 @@ bool testFutex2() {
     }
 }
 
+/* Acquire the futex pointed to by 'futexp': wait for its value to
+    become 1, and then set the value to 0. */
+bool fwaitMainline(struct futex_waitv futexp[]) {
+    /* __sync_bool_compare_and_swap(ptr, oldval, newval) is a gcc
+        built-in function.  It atomically performs the equivalent of:
+
+            if (*ptr == oldval)
+                *ptr = newval;
+
+        It returns true if the test yielded true and *ptr was updated.
+        The alternative here would be to employ the equivalent atomic
+        machine-language instructions.  For further information, see
+        the GCC Manual. */
+
+    while (1) {
+
+        /* Is the futex available? */
+
+        bool isAvailable = false;
+        for (int i = 0; i < NUM_FUTEX; i++) {
+            if (__sync_bool_compare_and_swap((__u32 *)futexp[i].uaddr, 1, 0)) {
+                isAvailable = true;
+            }
+        }
+
+        if (isAvailable) {
+            return true;
+        }
+
+        /* Futex is not available; wait */
+
+        /* Hardcoded syscall number for futex_waitv since most people will not have updated headers.
+            Probably only works on x86_64. */
+        if (syscall(449, futexp, NUM_FUTEX, 0, NULL, 0) == -1 && errno != EAGAIN) {
+            perror("futex-FUTEX_WAIT_MULTIPLE");
+            return false;
+        }
+    }
+}
+
+/* Release the futex pointed to by 'futexp': if the futex currently
+    has the value 0, set its value to 1 and the wake any futex waiters,
+    so that if the peer is blocked in fpost(), it can proceed. */
+
+bool fpostMainline(struct futex_waitv futexp[], int i) {
+    /* __sync_bool_compare_and_swap() was described in comments above */
+
+    if (__sync_bool_compare_and_swap((__u32 *)futexp[i].uaddr, 0, 1)) {
+        if (syscall(SYS_futex, futexp[i].uaddr, FUTEX_WAKE, 1, NULL, NULL, 0)  == -1) {
+            perror("futex-FUTEX_WAKE");
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Futex 2 has been accepted in the mainline kernel as of 5.16.
+   However, the interface is different from the previous implementations.
+   There is no sysfs interface so we must make a syscall.
+   This likely only works on x86_64 since I'm hardcoding the syscall number. */
+bool testMainlineWaitv(int nloops, bool verbose) {
+    /* Create a shared anonymous mapping that will hold the futexes.
+        Since the futexes are being shared between processes, we
+        subsequently use the "shared" futex operations (i.e., not the
+        ones suffixed "_PRIVATE") */
+
+    __u32 *iaddr = mmap(NULL, sizeof(__u32) * 2 * NUM_FUTEX, PROT_READ | PROT_WRITE,
+                MAP_ANONYMOUS | MAP_SHARED, -1, 0);
+    if (iaddr == MAP_FAILED) {
+        perror("mmap");
+        return false;
+    }
+
+    struct futex_waitv futex_block1[NUM_FUTEX], futex_block2[NUM_FUTEX];
+
+    for (int i = 0; i < NUM_FUTEX; i++) {
+        iaddr[i] = 0;    /* State: unavailable */
+        futex_block1[i].uaddr = (uintptr_t)&iaddr[i];
+        futex_block1[i].val = 0;
+        futex_block1[i].flags = 2;    /* FUTEX_32 */
+        futex_block1[i].__reserved = 0;
+    }
+
+    for (int i = 0; i < NUM_FUTEX; i++) {
+        iaddr[NUM_FUTEX + i] = 1;    /* State: available */
+        futex_block2[i].uaddr = (uintptr_t)&iaddr[NUM_FUTEX + i];
+        futex_block2[i].val = 0;
+        futex_block2[i].flags = 2;    /* FUTEX_32 */
+        futex_block2[i].__reserved = 0;
+    }
+
+    /* Create a child process that inherits the shared anonymous
+        mapping */
+
+    pid_t childPid = fork();
+    if (childPid == -1) {
+        perror("fork");
+        if (munmap(iaddr, sizeof(__u32) * 2 * NUM_FUTEX) == -1) {
+            perror("munmap");
+        }
+        return false;
+    }
+
+    if (childPid == 0) {        /* Child */
+        srand(time(NULL));
+        int status = 0;
+        for (int i = 0; i < nloops; i++) {
+            if(!fwaitMainline(futex_block1)) {
+                exit(EXIT_FAILURE);
+            }
+            if (verbose) {
+                printf("Child  (%ld) %d\n", (long) getpid(), i);
+            }
+            if(!fpostMainline(futex_block2, rand() % NUM_FUTEX)) {
+                exit(EXIT_FAILURE);
+            }
+        }
+
+        exit(EXIT_SUCCESS);
+    }
+
+    /* Parent falls through to here */
+
+    srand(time(NULL) + 234251);
+    bool success = true;
+    for (int i = 0; i < nloops; i++) {
+        if(!fwaitMainline(futex_block2)) {
+            success = false;
+            break;
+        }
+        if (verbose) {
+            printf("Parent (%ld) %d\n", (long) getpid(), i);
+        }
+        if(!fpostMainline(futex_block1, rand() % NUM_FUTEX)) {
+            success = false;
+            break;
+        }
+    }
+
+    int childStatus;
+    wait(&childStatus);
+    if (childStatus == EXIT_FAILURE) {
+        success = false;
+    }
+    if (munmap(iaddr, sizeof(__u32) * 2 * NUM_FUTEX) == -1) {
+        perror("munmap");
+    }
+    return success;
+}
+
 int main(int argc, char *argv[]) {
     setbuf(stdout, NULL);
 
@@ -246,6 +404,11 @@ int main(int argc, char *argv[]) {
             puts("futex2 test successful");
         } else {
             puts("futex2 test failed");
+        }
+        if (testMainlineWaitv(nloops, verbose)) {
+            puts("Mainline (kernel 5.16+) futex2 test successful");
+        } else {
+            puts("Mainline (kernel 5.16+) futex2 test failed");
         }
     }
 
