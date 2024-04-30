@@ -21,12 +21,20 @@ __u32 val;
 __u32 bitset;
 };
 
+#ifndef SYS_futex_waitv
+
+// Assume x86_64
+#define SYS_futex_waitv 449
+
+// This struct is defined in newer (post kernel 5.16) headers
 struct futex_waitv {
 __u64 val;
 __u64 uaddr;
 __u32 flags;
 __u32 __reserved;
 };
+
+#endif // SYS_futex_waitv
 
 bool checkKernelType() {
     struct utsname name;
@@ -256,9 +264,7 @@ bool fwaitMainline(struct futex_waitv futexp[]) {
 
         /* Futex is not available; wait */
 
-        /* Hardcoded syscall number for futex_waitv since most people will not have updated headers.
-            Probably only works on x86_64. */
-        if (syscall(449, futexp, NUM_FUTEX, 0, NULL, 0) == -1 && errno != EAGAIN) {
+        if (syscall(SYS_futex_waitv, futexp, NUM_FUTEX, 0, NULL, 0) == -1 && errno != EAGAIN) {
             perror("futex-FUTEX_WAIT_MULTIPLE");
             return false;
         }
@@ -283,8 +289,7 @@ bool fpostMainline(struct futex_waitv futexp[], int i) {
 
 /* Futex 2 has been accepted in the mainline kernel as of 5.16.
    However, the interface is different from the previous implementations.
-   There is no sysfs interface so we must make a syscall.
-   This likely only works on x86_64 since I'm hardcoding the syscall number. */
+   There is no sysfs interface so we must make a syscall. */
 bool testMainlineWaitv(int nloops, bool verbose) {
     /* Create a shared anonymous mapping that will hold the futexes.
         Since the futexes are being shared between processes, we
