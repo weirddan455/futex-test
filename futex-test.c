@@ -175,7 +175,6 @@ bool testWaitMultiple(int nloops, bool verbose) {
 
     if (childPid == 0) {        /* Child */
         srand(time(NULL));
-        int status = 0;
         for (int i = 0; i < nloops; i++) {
             if(!fwait(futex_block1)) {
                 exit(EXIT_FAILURE);
@@ -335,7 +334,6 @@ bool testMainlineWaitv(int nloops, bool verbose) {
 
     if (childPid == 0) {        /* Child */
         srand(time(NULL));
-        int status = 0;
         for (int i = 0; i < nloops; i++) {
             if(!fwaitMainline(futex_block1)) {
                 exit(EXIT_FAILURE);
