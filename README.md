@@ -2,12 +2,20 @@
 Simple C program for Linux that tests if the kernel supports additional futex functions used by Wine
 
 The FUTEX_MULTIPLE test was adapted from the example in the futex man page. Use --verbose to print the demonstration to console.
-The futex2 test simply makes a syscall for the new futex implementation and checks if the kernel throws an error.
 
 If your kernel does not support a futex extension, you should see a "Function not implemented" error.
 If you get another error, it's possible there's a bug. Open an Issue and post the output as well as your system information.
 
-Neither of these are currently supported by a vanilla kernel.  Patches can be found at https://github.com/Frogging-Family/linux-tkg
+Two versions of futex2 are tested.  One has been merged into the mainline vanilla kernel in 5.16.
+The other is an old variant that is only available by out of tree patches.
+
+Patches can be found at https://github.com/Frogging-Family/linux-tkg
+
+## AUR
+
+If you are an Arch Linux user, you can find this program on the AUR here:  https://aur.archlinux.org/packages/futex-test-git
+
+Note that this is not maintained by me so please report AUR specific issues in the AUR comments.
 
 ## Prerequisites
 You will need to have gcc installed as well as the standard C library header files usually located in /usr/include
