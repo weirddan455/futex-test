@@ -379,6 +379,14 @@ bool testMainlineWaitv(int nloops, bool verbose) {
 }
 
 int main(int argc, char *argv[]) {
+    if (argc > 1 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
+        puts("Argument: -v or --verbose to print additional debugging information");
+        puts("Argument: an integer number of loops to run the test");
+        puts("Example: ./futex-test --verbose 10");
+        puts("Example: ./futex-test 7");
+        return EXIT_SUCCESS;
+    }
+
     setbuf(stdout, NULL);
 
     if (checkKernelType()) {
